@@ -76,7 +76,8 @@
     }
 
     ::-webkit-scrollbar {
-      width: 7px
+      width: 7px;
+      height: 7px
     }
 
     ::-webkit-scrollbar-track {
@@ -623,44 +624,62 @@
 
     .q-nav {
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
+      overflow-x: auto;
       gap: 5px;
-      margin: 12px 0
+      margin: 12px 0;
+      padding-bottom: 8px;
+      -webkit-overflow-scrolling: touch;
     }
 
     .qn-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 5px;
+      width: 38px;
+      height: 38px;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
       border: 1px solid var(--border);
-      background: var(--bg);
+      background: var(--panel);
       color: var(--txt2);
       cursor: pointer;
       font-size: 12px;
       font-weight: 700;
-      transition: all .2s
+      transition: all .22s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .qn-btn:hover {
+      border-color: var(--accent);
+      color: var(--txt);
+      background: rgba(124, 58, 237, 0.1);
     }
 
     .qn-btn.cur {
       border-color: var(--accent);
-      background: rgba(124, 58, 237, .2);
-      color: var(--accent2)
+      background: rgba(124, 58, 237, .25);
+      color: var(--accent2);
+      box-shadow: 0 0 10px rgba(124, 58, 237, 0.35);
+      border-width: 2px;
     }
 
     .qn-btn.ans {
       border-color: var(--ok);
       background: rgba(16, 185, 129, .15);
-      color: var(--ok)
+      color: var(--ok);
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.15);
     }
 
     .qn-btn.bad {
       border-color: var(--err);
       background: rgba(239, 68, 68, .15);
-      color: var(--err)
+      color: var(--err);
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.15);
     }
 
     .qn-btn.bk {
-      border-color: var(--accent2)
+      border-color: var(--warn);
+      box-shadow: inset 0 0 4px rgba(245, 158, 11, 0.3);
     }
 
     .timer {
@@ -2002,9 +2021,10 @@ const TRAPS=[
 const ST={
   qcm:{idx:0,answers:{},bookmarks:{},mode:'all',chapter:'all'},
   fc:{idx:0,states:{},chapter:'all',shuffled:[]},
+  ta:{pb:0},
   search:'',streak:0,lastActive:'',sessionSec:0,
-  load(){try{const s=localStorage.getItem('pd_state');if(s){const d=JSON.parse(s);this.qcm.answers=d.qa||{};this.qcm.bookmarks=d.bk||{};this.fc.states=d.fs||{};this.streak=d.str||0;this.lastActive=d.la||''}}catch(e){}},
-  save(){try{localStorage.setItem('pd_state',JSON.stringify({qa:this.qcm.answers,bk:this.qcm.bookmarks,fs:this.fc.states,str:this.streak,la:this.lastActive}))}catch(e){}}
+  load(){try{const s=localStorage.getItem('pd_state');if(s){const d=JSON.parse(s);this.qcm.answers=d.qa||{};this.qcm.bookmarks=d.bk||{};this.fc.states=d.fs||{};this.streak=d.str||0;this.lastActive=d.la||'';this.ta.pb=d.ta_pb||0;}}catch(e){}},
+  save(){try{localStorage.setItem('pd_state',JSON.stringify({qa:this.qcm.answers,bk:this.qcm.bookmarks,fs:this.fc.states,str:this.streak,la:this.lastActive,ta_pb:this.ta.pb}))}catch(e){}}
 };
 ST.load();
 
@@ -2097,6 +2117,10 @@ function toggleSidebar(){
 function initTabs(){
   document.querySelectorAll('.tab-btn').forEach(b=>{
     b.addEventListener('click',()=>{
+      if (window.ST && ST.taRun && ST.taRun.timerId) {
+        clearInterval(ST.taRun.timerId);
+        ST.taRun.active = false;
+      }
       const nt=document.getElementById('nav-tabs');
       if(window.innerWidth<=850&&nt.classList.contains('open'))toggleSidebar();
       document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
@@ -2127,6 +2151,7 @@ function getFilteredQ(){
 
 function renderQCM(){
   const el=document.getElementById('tab-qcm');if(!el)return;
+  if(ST.qcm.mode==='timeattack'){renderTimeAttack();return;}
   const total=Q.length;
   const answered=Object.keys(ST.qcm.answers).filter(k=>!k.includes('_sel')).length;
   const correct=Object.entries(ST.qcm.answers).filter(([k,v])=>!k.includes('_sel')&&v===true).length;
@@ -2175,6 +2200,7 @@ function renderQCM(){
   <button class="f-btn${ST.qcm.mode==='all'?' on':''}" onclick="ST.qcm.mode='all';ST.qcm.idx=0;renderQCM()">Toutes</button>
   <button class="f-btn${ST.qcm.mode==='wrong'?' on':''}" onclick="ST.qcm.mode='wrong';ST.qcm.idx=0;renderQCM()">❌ Erreurs</button>
   <button class="f-btn${ST.qcm.mode==='bookmarks'?' on':''}" onclick="ST.qcm.mode='bookmarks';ST.qcm.idx=0;renderQCM()">🔖 Signets</button>
+  <button class="f-btn${ST.qcm.mode==='timeattack'?' on':''}" onclick="ST.qcm.mode='timeattack';renderQCM()">⏱️ Time Attack</button>
   <button class="f-btn" onclick="renderQCM()">🔀 Suivant</button>
   <button class="f-btn" onclick="if(confirm('Réinitialiser ?')){ST.qcm.answers={};ST.save();renderQCM()}">♻️ Reset</button>
 </div>
@@ -2194,6 +2220,29 @@ function renderQCM(){
   <button class="btn btn-s" ${qi<=0?'disabled':''} onclick="ST.qcm.idx=${qi-1};renderQCM()">← Préc</button>
   <button class="btn btn-p" ${qi>=fp.length-1?'disabled':''} onclick="ST.qcm.idx=${qi+1};renderQCM()">Suiv →</button>
 </div>`;
+
+  const curBtn = el.querySelector('.qn-btn.cur');
+  if (curBtn) {
+    curBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }
+
+  const cardEl = el.querySelector('.card');
+  if (cardEl) {
+    let touchStartX = 0;
+    cardEl.addEventListener('touchstart', e => {
+      touchStartX = e.changedTouches[0].clientX;
+    }, { passive: true });
+    cardEl.addEventListener('touchend', e => {
+      const diff = e.changedTouches[0].clientX - touchStartX;
+      if (Math.abs(diff) > 60) {
+        if (diff < 0) {
+          if (qi < fp.length - 1) { ST.qcm.idx = qi + 1; renderQCM(); }
+        } else {
+          if (qi > 0) { ST.qcm.idx = qi - 1; renderQCM(); }
+        }
+      }
+    }, { passive: true });
+  }
 }
 
 function answerQ(id,sel,correct){
@@ -2206,6 +2255,159 @@ function answerQ(id,sel,correct){
 function revealQ(id,correct){
   ST.qcm.answers[id]=true;ST.qcm.answers[id+'_sel']=correct;
   ST.save();renderQCM();
+}
+
+/* ===== TIME ATTACK FUNCTIONS ===== */
+function startTimeAttack() {
+  if (ST.taRun && ST.taRun.timerId) {
+    clearInterval(ST.taRun.timerId);
+  }
+  let pool = [...Q];
+  if (ST.qcm.chapter !== 'all') {
+    pool = pool.filter(q => q.ch === ST.qcm.chapter);
+  }
+  ST.taRun = {
+    active: true,
+    timeLeft: 60,
+    score: 0,
+    idx: 0,
+    questions: shuffle(pool),
+    timerId: null,
+    answered: false,
+    selected: null,
+    correctFlash: false,
+    wrongFlash: false
+  };
+  ST.taRun.timerId = setInterval(() => {
+    if (ST.taRun.active && ST.taRun.timeLeft > 0) {
+      ST.taRun.timeLeft--;
+      if (ST.taRun.timeLeft <= 0) {
+        clearInterval(ST.taRun.timerId);
+      }
+      renderTimeAttack();
+    }
+  }, 1000);
+  ST.qcm.mode = 'timeattack';
+  renderQCM();
+}
+
+function answerTimeAttack(sel, correct) {
+  if (ST.taRun.answered) return;
+  ST.taRun.answered = true;
+  ST.taRun.selected = sel;
+  const isCorrect = (sel === correct);
+  if (isCorrect) {
+    ST.taRun.score++;
+    ST.taRun.timeLeft += 3;
+    ST.taRun.correctFlash = true;
+    toast('⚡ +3s !');
+  } else {
+    ST.taRun.timeLeft = Math.max(0, ST.taRun.timeLeft - 5);
+    ST.taRun.wrongFlash = true;
+    toast('💥 -5s !');
+  }
+  renderTimeAttack();
+  setTimeout(() => {
+    if (ST.taRun.active && ST.taRun.timeLeft > 0) {
+      ST.taRun.idx++;
+      ST.taRun.answered = false;
+      ST.taRun.selected = null;
+      ST.taRun.correctFlash = false;
+      ST.taRun.wrongFlash = false;
+      renderTimeAttack();
+    }
+  }, 600);
+}
+
+function renderTimeAttack() {
+  const el = document.getElementById('tab-qcm'); if (!el) return;
+  if (!ST.taRun || !ST.taRun.active) {
+    el.innerHTML = `
+      <div class="ta-lobby" style="text-align:center; padding:40px 20px; max-width:500px; margin: 40px auto; background:var(--panel); border:1px solid var(--border); border-radius:16px; box-shadow:0 12px 40px rgba(0,0,0,0.4)">
+        <span style="font-size:64px; display:block; margin-bottom:16px">⏱️</span>
+        <h2 style="font-size:24px; font-weight:700; color:var(--warn); margin-bottom:12px">MODE TIME ATTACK</h2>
+        <p style="font-size:14px; color:var(--txt-dim); line-height:1.6; margin-bottom:24px">
+          Répondez à un maximum de questions avant la fin du temps imparti !
+          <br><br>
+          ✅ Bonne réponse : <strong>+3 secondes</strong>
+          <br>
+          ❌ Mauvaise réponse : <strong>-5 secondes</strong>
+        </p>
+        <div style="background:rgba(255,255,255,0.03); padding:12px; border-radius:8px; margin-bottom:24px; border:1px solid var(--border)">
+          <div style="font-size:12px; color:var(--txt-dim)">RECORD PERSONNEL</div>
+          <div style="font-size:28px; font-weight:800; color:var(--ok)">${ST.ta.pb} <span style="font-size:14px; font-weight:normal">points</span></div>
+        </div>
+        <button class="btn btn-p" onclick="startTimeAttack()" style="width:100%; padding:14px; font-size:16px">DÉMARRER LE CHALLENGE</button>
+        <button class="btn btn-s" onclick="ST.qcm.mode='all';renderQCM()" style="width:100%; margin-top:10px; padding:10px; font-size:14px">Retour aux QCMs</button>
+      </div>
+    `;
+    return;
+  }
+  if (ST.taRun.timeLeft <= 0) {
+    const isNewRecord = ST.taRun.score > ST.ta.pb;
+    if (isNewRecord) {
+      ST.ta.pb = ST.taRun.score;
+      ST.save();
+    }
+    el.innerHTML = `
+      <div class="ta-lobby" style="text-align:center; padding:40px 20px; max-width:500px; margin: 40px auto; background:var(--panel); border:1px solid var(--border); border-radius:16px; box-shadow:0 12px 40px rgba(0,0,0,0.4)">
+        <span style="font-size:64px; display:block; margin-bottom:16px">${isNewRecord ? '👑' : '🏁'}</span>
+        <h2 style="font-size:24px; font-weight:700; color:${isNewRecord ? 'var(--ok)' : 'var(--err)'}; margin-bottom:12px">
+          ${isNewRecord ? 'NOUVEAU RECORD !' : 'TEMPS ÉCOULÉ !'}
+        </h2>
+        <div style="margin:24px 0">
+          <div style="font-size:14px; color:var(--txt-dim)">Score final</div>
+          <div style="font-size:48px; font-weight:800; color:var(--accent2); margin:8px 0">${ST.taRun.score}</div>
+          <div style="font-size:12px; color:var(--txt-dim)">Ancien Record : ${ST.ta.pb} points</div>
+        </div>
+        <button class="btn btn-p" onclick="startTimeAttack()" style="width:100%; padding:14px; font-size:16px">RÉESSAYER</button>
+        <button class="btn btn-s" onclick="ST.qcm.mode='all'; ST.taRun.active=false; renderQCM()" style="width:100%; margin-top:10px; padding:10px; font-size:14px">Retour aux QCMs</button>
+      </div>
+    `;
+    return;
+  }
+  const q = ST.taRun.questions[ST.taRun.idx];
+  if (!q) {
+    ST.taRun.questions = shuffle([...Q]);
+    ST.taRun.idx = 0;
+    renderTimeAttack();
+    return;
+  }
+  const pct = Math.min(100, Math.max(0, (ST.taRun.timeLeft / 60) * 100));
+  const timeColor = ST.taRun.timeLeft <= 15 ? 'var(--err)' : ST.taRun.timeLeft <= 30 ? 'var(--warn)' : 'var(--ok)';
+  const optsHtml = q.opts.map((o, i) => {
+    let cls = 'opt-btn';
+    let badge = '';
+    if (ST.taRun.answered) {
+      if (i === q.ans) {
+        cls += ' revealed';
+        badge = `<span class="opt-badge ok">✓</span>`;
+      } else if (ST.taRun.selected === i) {
+        cls += ' wrong';
+        badge = `<span class="opt-badge bad">✗</span>`;
+      }
+    }
+    return `<button class="${cls}" ${ST.taRun.answered ? 'disabled' : ''} onclick="answerTimeAttack(${i}, ${q.ans})">${String.fromCharCode(65+i)}. ${hl(o)}${badge}</button>`;
+  }).join('');
+  el.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 4px">
+      <div style="font-size:14px; font-weight:700; color:var(--txt-dim)">SCORE: <span style="font-size:20px; color:var(--accent2)">${ST.taRun.score}</span></div>
+      <div style="font-size:14px; font-weight:700; color:${timeColor}; display:flex; align-items:center; gap:6px">
+        ⏱️ <span style="font-size:24px; font-family:var(--mono);">${ST.taRun.timeLeft}s</span>
+      </div>
+    </div>
+    <div class="prog-wrap" style="height:8px; border-radius:4px; margin-bottom:20px; background:rgba(255,255,255,0.05)">
+      <div class="prog-bar" style="width:${pct}%; background:${timeColor}; transition: width 0.1s linear, background 0.3s;"></div>
+    </div>
+    <div class="card ${ST.taRun.wrongFlash ? 'shake' : ''}" style="border:1px solid ${ST.taRun.correctFlash ? 'var(--ok)' : ST.taRun.wrongFlash ? 'var(--err)' : 'var(--border)'}; background:${ST.taRun.correctFlash ? 'rgba(16,185,129,0.05)' : ST.taRun.wrongFlash ? 'rgba(239,68,68,0.05)' : 'var(--panel)'}">
+      <div class="sec-title">${chTag(q.ch)} ${diffTag(q.diff)} <span class="badge" style="background:var(--border)">Q. ${ST.taRun.idx + 1}</span></div>
+      <p style="font-size:15px; font-weight:600; line-height:1.7; margin-bottom:16px">${hl(q.q)}</p>
+      ${optsHtml}
+    </div>
+    <div style="text-align:center; margin-top:20px">
+      <button class="btn btn-s" onclick="ST.taRun.timeLeft=0; renderTimeAttack()" style="opacity:0.6">🏳️ Abandonner</button>
+    </div>
+  `;
 }
 function toggleBk(id){
   if(ST.qcm.bookmarks[id])delete ST.qcm.bookmarks[id];else ST.qcm.bookmarks[id]=true;
@@ -2301,6 +2503,24 @@ function renderFC() {
   <button class="btn btn-s" onclick="prevFC()" ${i === 0 ? 'disabled' : ''}>← Préc</button>
   <button class="btn btn-p" onclick="nextFC()" ${i === finalPool.length - 1 ? 'disabled' : ''}>Suiv →</button>
 </div>`;
+
+  const arenaEl = el.querySelector('.fc-arena');
+  if (arenaEl) {
+    let touchStartX = 0;
+    arenaEl.addEventListener('touchstart', e => {
+      touchStartX = e.changedTouches[0].clientX;
+    }, { passive: true });
+    arenaEl.addEventListener('touchend', e => {
+      const diff = e.changedTouches[0].clientX - touchStartX;
+      if (Math.abs(diff) > 60) {
+        if (diff < 0) {
+          nextFC();
+        } else {
+          prevFC();
+        }
+      }
+    }, { passive: true });
+  }
 }
 
 function flipFC() { const card = document.getElementById('fc-card'); if (card) card.classList.toggle('flipped'); }
